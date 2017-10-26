@@ -9,7 +9,7 @@ build:
     - script:
         name: Check for allowed files
         code: |
-          Rscript -e "source('http://www2.stat.duke.edu/~cr173/Sta323_Sp17/hw/hw5_whitelist.R')"
+          Rscript -e "source('https://raw.githubusercontent.com/Sta523-Fa17/hw5/master/hw5_whitelist.R')"
     - script:
         name: Check document compiles
         code: |
