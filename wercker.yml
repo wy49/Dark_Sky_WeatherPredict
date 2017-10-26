@@ -13,5 +13,4 @@ build:
     - script:
         name: Check document compiles
         code: |
-          make
           Rscript -e "library(rmarkdown);render('hw5.Rmd')"
