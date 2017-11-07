@@ -23,6 +23,7 @@ library(dplyr)
 library(rvest)
 library(stringr)
 library(googleway)
+library(ggplot2)
 ```
 
 <br/><br/>
