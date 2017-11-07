@@ -11,12 +11,11 @@ runtime: shiny
 knitr::opts_chunk$set(echo = TRUE)
 options(repos="https://cran.rstudio.com" )
 install.packages("googleway")
-``````
+```
 
 
 ```{r, message = FALSE}
 # Load any necessary packages here
-
 library(shiny)
 library(jsonlite)
 library(dplyr)
