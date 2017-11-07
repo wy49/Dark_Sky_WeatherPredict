@@ -1,16 +1,28 @@
 ---
 title: "Sta 523 - Homework 5"
-author: [Your names here]
+author: Team 08
 output: rmarkdown::html_document
 runtime: shiny
 ---
 
 ### Setup
 
-```{r}
+```{r, include = FALSE, message = FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(repos="https://cran.rstudio.com" )
+install.packages("googleway")
+``````
+
+
+```{r, message = FALSE}
 # Load any necessary packages here
 
 library(shiny)
+library(jsonlite)
+library(dplyr)
+library(rvest)
+library(stringr)
+library(googleway)
 ```
 
 <br/><br/>
@@ -19,12 +31,29 @@ library(shiny)
 
 <!-- Include your write up here and or below -->
 
-```{r}
-get_darksky = function(key, lat, long, date = NULL)
-{
+When user does not choose a date, a 48-hour forecast is provided by our app. we first convert the inputs to valid url for Forecast Request, and obtain the JSON data from the website. We then convert it to R object, and get the hourly data elements in the list, which is by default a data frame with 49 rows, 1 row for each hour.
 
+When user does choose a past date, our app shows the weather for two days prior and following the chosen date. For each day, we calculate the right date and convert the inputs to valid url for Time Machine Request, and obtain the JSON data from the website. We then convert it to R object, and get the hourly data elements in the list, which is by default a data frame with 24 rows, 1 row for each hour. The four data frames are then combined into one full data frame with 96 rows. Cells without data are filled with NA's as a result of row bind.
+
+```{r}
+get_darksky = function(key, lat, long, date = NULL){
+  base_url = "https://api.darksky.net/forecast"
+  day_sec = 60*60*24
+  
+  # Get data from web
+  if(is.null(date)){               ##Forecast Request
+    hourly = fromJSON(paste(base_url,key,paste(lat,long,sep=","),sep="/"))$hourly$data
+  }else{                           ##Time Machine Request
+    hourly = lapply(-2:1, function(i)
+      fromJSON(paste(base_url,key,
+                     paste(lat,long,date+i*day_sec,sep=","),sep="/"))$hourly$data)%>% 
+      bind_rows()
+  }
+  
+  return(hourly)
 }
 ```
+
 
 
 <br/><br/>
@@ -33,11 +62,41 @@ get_darksky = function(key, lat, long, date = NULL)
 
 <!-- Include your write up here and or below -->
 
+We first scrap US city location information from the table on wikipedia by getting the first sortable wikitable on that page, store it as raw table, and rename the columns accordingly.
+
+We delete the rank and imperial unit columns from the raw table, and convert each variables to the right form. We clean the `City` column by removing any footnote references. The `State` column is already clean. The commas in the `census_2010` column is dropped and the values converted to numeric type. The data frame is then filtered by the constrain that the city needs to have more than 500,000 residents according the the census in 2010. The noise in the `change` column is dropped and we convert it from a percentage form string to a decimal number of numeric type. The units and commas in the `land_area_2016` and `pop_density_2016` are dropped and we convert them to numeric type. Note that for `land_area_2016` and `pop_density_2016` we are using the metric units. The `latitude` and `longitude` are extracted from `Location` and converted to numeric type. The `Location` column is then deleted.
+
 ```{r}
 # Create your location data frame here
 us_locs = data.frame()
-```
 
+# Get raw table from web
+page = read_html("https://en.wikipedia.org/wiki/List_of_United_States_cities_by_population")
+raw_table = page %>% html_nodes('table[class="wikitable sortable"]') %>% 
+{.[1]} %>% html_table() %>% {.[[1]]} 
+names(raw_table) = c("rank", "City", "State", "estimate_2016", "census_2010", "change",
+                     "land_area_2016_sq_mi", "land_area_2016", "pop_density_2016_sq_mi",
+                     "pop_density_2016", "Location")
+
+# Use metric units
+us_locs = raw_table %>% select(-rank, -land_area_2016_sq_mi, -pop_density_2016_sq_mi) %>% 
+  mutate(City = str_replace(City, "\\[\\d+\\]",""),
+         estimate_2016 = str_replace_all(estimate_2016,",","") %>% as.numeric(),
+         census_2010 = str_replace_all(census_2010,",","") %>% as.numeric()) %>% 
+  filter(census_2010>500000 ) %>% 
+  mutate(change = str_replace_all(change, "\\d+???|%","") %>% 
+           str_replace("???","-") %>% as.numeric()/100,
+         land_area_2016 = str_replace_all(land_area_2016, ",|\\s[\\s,\\S]*","") %>% 
+           as.numeric(),
+         pop_density_2016 = str_replace_all(pop_density_2016, ",|\\/[\\s,\\S]*","") %>% 
+           as.numeric(),
+         latitude = str_replace_all(Location, 
+                                    "[\\s,\\S]*?/[\\s,\\S]*?/\\s|;[\\s,\\S]*$","") %>% 
+           as.numeric(),
+         longitude = str_replace_all(Location,"[\\s,\\S]*?;\\s","") %>% 
+           str_extract("-\\d*.\\d*") %>% as.numeric(),
+         Location = NULL)
+```
  
  <br/><br/>
 
@@ -45,25 +104,182 @@ us_locs = data.frame()
 
 
 <!-- Include your write up here and or below -->
+The purpose of our app is to plot the temperature and a 2nd weather-related quantity of chosen city and date. The UI allow users to choose city from a list, which is obtained in task 2, a day from 1970-1-1 to current date, and a 2nd quantity. The list of 2nd quantity consists of all the numeric variables of the JSON data of selected city and date. When a city is selected, the server will extract its latitude and longitude from the table of US cities. The Server then use the latitude, longitude and date to send a request to darksky API by `get_darksky()` function. Darksky API will then sent back the weather data which we later use for the plot. The `reactive()`stores variables `lat`, `long`, `timezone`, `date`, `hourly`, `quants`, the 2nd quantity list `names.display`, and title as reactive functions, which make them easier to update later in render functions. The `Observeevent()` in the Server will observe the input of city and date, and update the list of 2nd quantity in UI based on available variables in the JSON file. If the chosen 2nd quantity is not available for current city and date, the validating code will output a error message.
+
+There is a `plotOutput` and a `textOutput` in the `mainPanel`. The plot shows how temperature will change from the current time to 48 hours later if a forecast request is made(no date input), and the observed change of temperature if a time machine request is made. If user has chosen one in the `sidePanel`, the plot will also display a 2nd quantity, such as pressure or humidity. We scale the plot of 2nd quantity in order to make the range of the whole plot reasonable. The unscaled axis of the 2nd quantity is shown on the right the plot, so users can read the original numbers from the plot easily.
 
 ```{r echo=FALSE}
 # Modify this default shiny app
 
+## Initiate Default using first city in us_locs, Forcast request
+## In order to get choice of all other posible quantities for panel
+default.city = us_locs$City[1]
+hourly = get_darksky("dfb209f3d5355ec88b0a429d80eb9a2a", 
+                     us_locs$latitude[us_locs$City==default.city], 
+                     us_locs$longitude[us_locs$City==default.city], NULL)
+quants = hourly[sapply(hourly,is.numeric)] %>%
+  select(-time, -temperature) %>% names()
+names.display = gsub("([a-z])([A-Z])", "\\1 \\2",quants) %>% str_to_title()
+
+## A data frame for matching all possible units
+unit.df = data_frame(temperature = "Fahrenheit",
+           precipIntensity = "Millimeters per hour",
+           precipProbability = "percentage", 
+           apparentTemperature = "Fahrenheit",
+           dewPoint = "Fahrenheit", humidity = "percentage",
+           pressure = "millibars", windSpeed = "miles per hour",
+           windBearing = "degrees", cloudCover = "percentage",
+           uvIndex = "index level", visibility = "mile",
+           precipAccumulation = "inches", ozone = "DU",
+           windGust = "miles per hour")
+
+
+
+
 shinyApp(
+  ########## ui
   ui = fluidPage(
-     titlePanel(""),
+     ## Title
+     titlePanel("Local Weather Hourly Forecast"),
+
+     ## Layout
      sidebarLayout(
+        ######## Sidebar Panel
         sidebarPanel(
-
+          ## Location input
+          h4("Location:"),
+          selectInput(inputId='city', labe='Choose City', choices = us_locs$City, 
+                      selected=us_locs$City[1]), #Default city New York
+          br(),
+          
+          ## Second quantity input
+          h4("Second quantity:"),
+          checkboxInput("askSecond", "Want a second quantity?"),
+          conditionalPanel(
+            "input.askSecond == true",
+            selectInput("second","Choose second quantity", 
+                        choices = names.display, 
+                        selected = names.display[1])),
+          ######Note: Need to update names.display
+          br(),
+          
+          ## Date input
+          h4("Date:"),
+          checkboxInput("askDate", "Choose Date for Time Machine Request?"),
+          conditionalPanel(
+            "input.askDate == true",
+            dateInput("date", "Choose Date", value = Sys.Date(), 
+                      min = "1970-1-1", max = Sys.Date())
+          )
         ),
+        
+        ######### Main Panel
         mainPanel(
-
+          plotOutput('plot'),
+          htmlOutput('text')
         )
      )
   ),
-  server = function(input, output, session) 
-  {   
+  
+  
+  ######### server
+  server = function(input, output, session) {
+    ###### Reactives
+    lat = reactive({us_locs$latitude[us_locs$City==input$city]})
+    long = reactive({us_locs$longitude[us_locs$City==input$city]})
+    timezone = reactive({google_timezone(c(lat(), long()),key = NULL)$timeZoneId})
+    
+    date = reactive({
+      if(input$askDate){
+        output = as.numeric(as.POSIXct(as.character(input$date), tz = timezone()))
+      }else{output = NULL}
+      output
+    })
+    
+    title.name = reactive({
+      if(input$askDate){
+        output = "Hourly Forecast for the Two Days Prior and Two Days Following in "
+      }else{
+        output =  "Hourly Forecast for the Next Two Days in "}
+      output
+    })
+    
+    hourly = reactive({
+      get_darksky(key = "dfb209f3d5355ec88b0a429d80eb9a2a",lat(),long(),date())
+    })
+      
+    quants = reactive({
+      hourly = hourly()
+      hourly[sapply(hourly,is.numeric)] %>% select(-time, -temperature) %>% names()
+    })
+      
+    names.display = reactive({
+      gsub("([a-z])([A-Z])", "\\1 \\2",quants()) %>% str_to_title()
+    })
+      
 
+    
+    ##### Update 2nd variable panel
+    observeEvent({
+      input$city
+      input$askDate
+      input$date
+    },{
+      names.display = names.display()
+      
+      # If selected 2nd quantity not valid, 
+      # change selected to 1st element of new panel
+      if(input$second %in% names.display){
+        updateSelectInput(session, "second", 
+                        choices = names.display,
+                        selected = input$second)
+      }else{
+        updateSelectInput(session, "second", 
+                        choices = names.display,
+                        selected = names.display[1])
+      }
+    })
+    
+    
+    ##### output for plot
+    output$plot = renderPlot({
+      timezone = timezone()
+      title.name = title.name()
+      hourly = hourly()
+      
+      ## First check if 2nd quantity is valid
+      ## return if not
+      quants = quants()
+      names.display = names.display()
+      if(!input$second %in% names.display)
+        return()
+
+      # Plot temperature
+      plot = ggplot(hourly, aes(x = as.POSIXct(time, origin="1970-01-01 00:00:00",
+                                        tz = timezone, format = "%Y-%m-%d")))+
+        geom_line(aes(y = temperature, color='Temperature'))+
+        labs(title=paste0(title.name, input$city),
+             x ="Date time", y = paste0("Temperature/",unit.df[["temperature"]]))
+      colors = c("#9999CC")
+      # Add another y to plot if needed
+      if(input$askSecond){
+        quant2 = quants[names.display == input$second]
+        scale = max(hourly[[quant2]])/max(hourly$temperature)
+        plot = plot + 
+          geom_line(aes(y = hourly[[quant2]]/scale, colour = input$second)) +
+          scale_y_continuous(sec.axis = sec_axis(~.*scale, 
+                        name = paste0(input$second,"/",unit.df[[quant2]])))
+        colors = c("#CC6677", "#9999CC")
+      }
+      plot + scale_color_manual(values=colors)
+    })
+    
+    ###### output for text
+    output$text <- renderUI({
+      HTML(paste(paste0(input$city, ":"), paste("Latitude:",lat()),
+                 paste("Longitude:",long()), sep = '<br/>'))
+    })
+    
   }
 )
 ```
