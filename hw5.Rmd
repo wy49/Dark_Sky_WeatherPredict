@@ -16,6 +16,7 @@ install.packages("googleway")
 
 ```{r, message = FALSE}
 # Load any necessary packages here
+
 library(shiny)
 library(jsonlite)
 library(dplyr)
@@ -83,8 +84,8 @@ us_locs = raw_table %>% select(-rank, -land_area_2016_sq_mi, -pop_density_2016_s
          estimate_2016 = str_replace_all(estimate_2016,",","") %>% as.numeric(),
          census_2010 = str_replace_all(census_2010,",","") %>% as.numeric()) %>% 
   filter(census_2010>500000 ) %>% 
-  mutate(change = str_replace_all(change, "\\d+???|%","") %>% 
-           str_replace("???","-") %>% as.numeric()/100,
+  mutate(change = str_replace_all(change, "\\d+♠|%","") %>% 
+           str_replace("−","-") %>% as.numeric()/100,
          land_area_2016 = str_replace_all(land_area_2016, ",|\\s[\\s,\\S]*","") %>% 
            as.numeric(),
          pop_density_2016 = str_replace_all(pop_density_2016, ",|\\/[\\s,\\S]*","") %>% 
@@ -103,7 +104,8 @@ us_locs = raw_table %>% select(-rank, -land_area_2016_sq_mi, -pop_density_2016_s
 
 
 <!-- Include your write up here and or below -->
-The purpose of our app is to plot the temperature and a 2nd weather-related quantity of chosen city and date. The UI allow users to choose city from a list, which is obtained in task 2, a day from 1970-1-1 to current date, and a 2nd quantity. The list of 2nd quantity consists of all the numeric variables of the JSON data of selected city and date. When a city is selected, the server will extract its latitude and longitude from the table of US cities. The Server then use the latitude, longitude and date to send a request to darksky API by `get_darksky()` function. Darksky API will then sent back the weather data which we later use for the plot. The `reactive()`stores variables `lat`, `long`, `timezone`, `date`, `hourly`, `quants`, the 2nd quantity list `names.display`, and title as reactive functions, which make them easier to update later in render functions. The `Observeevent()` in the Server will observe the input of city and date, and update the list of 2nd quantity in UI based on available variables in the JSON file. If the chosen 2nd quantity is not available for current city and date, the validating code will output a error message.
+
+The purpose of our app is to plot the temperature and a 2nd weather-related quantity of chosen city and date. The UI allow users to choose city from a list, which is obtained in task 2, a day from 1970-1-1 to current date, and a 2nd quantity. The list of 2nd quantity consists of all the numeric variables of the JSON data of selected city and date. When a city is selected, the server will extract its latitude and longitude from the table of US cities. The Server then use the latitude, longitude and date to send a request to darksky API by `get_darksky()` function. Darksky API will then sent back the weather data which we later use for the plot. The `reactive()`stores latitude, longitude and time zone as reactive functions, which make it easier to update later in render functions. The `Observeevent()` in the Server will observe the input of city and date, and update the list of 2nd quantity in UI based on available variables in the JSON file. If the chosen 2nd quantity is not available for current city and date, the validating code will output a error message.
 
 There is a `plotOutput` and a `textOutput` in the `mainPanel`. The plot shows how temperature will change from the current time to 48 hours later if a forecast request is made(no date input), and the observed change of temperature if a time machine request is made. If user has chosen one in the `sidePanel`, the plot will also display a 2nd quantity, such as pressure or humidity. We scale the plot of 2nd quantity in order to make the range of the whole plot reasonable. The unscaled axis of the 2nd quantity is shown on the right the plot, so users can read the original numbers from the plot easily.
 
